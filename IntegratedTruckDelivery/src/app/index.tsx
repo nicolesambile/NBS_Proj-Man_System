@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  ActivityIndicator,
+  Platform,
   StyleSheet,
 } from "react-native";
 
@@ -18,6 +20,29 @@ import {
 
 import { Delivery } from "../../types/delivery";
 
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : "Something went wrong.";
+
+const showMessage = (title: string, message: string) => {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") {
+      window.alert(`${title}\n\n${message}`);
+    }
+    return;
+  }
+
+  Alert.alert(title, message);
+};
+
+const isValidDeliveryDate = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+};
+
 export default function Index() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [customerName, setCustomerName] = useState("");
@@ -28,19 +53,26 @@ export default function Index() {
   const [status, setStatus] = useState("Pending");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingDeliveries, setLoadingDeliveries] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  const loadDeliveries = async () => {
+  const loadDeliveries = useCallback(async () => {
+    setLoadingDeliveries(true);
+    setLoadError(null);
     try {
       const data = await getDeliveries();
       setDeliveries(data);
     } catch (error) {
-      Alert.alert("Error", "Could not load deliveries.");
+      setLoadError(getErrorMessage(error));
+    } finally {
+      setLoadingDeliveries(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadDeliveries();
-  }, []);
+    void loadDeliveries();
+  }, [loadDeliveries]);
 
   const clearForm = () => {
     setCustomerName("");
@@ -60,7 +92,12 @@ export default function Index() {
       !driverName.trim() ||
       !deliveryDate.trim()
     ) {
-      Alert.alert("Missing Information", "Please complete all fields.");
+      showMessage("Missing Information", "Please complete all fields.");
+      return;
+    }
+
+    if (!isValidDeliveryDate(deliveryDate.trim())) {
+      showMessage("Invalid Date", "Enter a valid date in YYYY-MM-DD format.");
       return;
     }
 
@@ -81,19 +118,16 @@ export default function Index() {
           id: editingId,
           ...deliveryData,
         });
-        Alert.alert("Success", "Delivery updated successfully.");
+        showMessage("Success", "Delivery updated successfully.");
       } else {
         await addDelivery(deliveryData);
-        Alert.alert("Success", "Delivery added successfully.");
+        showMessage("Success", "Delivery added successfully.");
       }
 
       clearForm();
       await loadDeliveries();
     } catch (error) {
-      Alert.alert(
-        "Error",
-        error instanceof Error ? error.message : "Something went wrong."
-      );
+      showMessage("Error", getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -105,35 +139,52 @@ export default function Index() {
     setDestination(item.destination);
     setTruckPlate(item.truck_plate);
     setDriverName(item.driver_name);
-    setDeliveryDate(item.delivery_date);
+    setDeliveryDate(item.delivery_date.slice(0, 10));
     setStatus(item.status);
   };
 
+  const confirmDelete = async (id: number) => {
+    setDeletingId(id);
+    try {
+      await deleteDelivery(id);
+      showMessage("Success", "Delivery deleted successfully.");
+      await loadDeliveries();
+    } catch (error) {
+      showMessage("Error", getErrorMessage(error));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const handleDelete = (id: number) => {
+    const message = "Are you sure you want to delete this delivery?";
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(message)) {
+        void confirmDelete(id);
+      }
+      return;
+    }
+
     Alert.alert(
       "Delete Delivery",
-      "Are you sure you want to delete this delivery?",
+      message,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteDelivery(id);
-              Alert.alert("Success", "Delivery deleted successfully.");
-              await loadDeliveries();
-            } catch (error) {
-              Alert.alert("Error", "Could not delete delivery.");
-            }
-          },
+          onPress: () => void confirmDelete(id),
         },
       ]
     );
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.title}>Truck Delivery Management</Text>
 
       <Text style={styles.heading}>
@@ -145,6 +196,8 @@ export default function Index() {
         placeholder="Customer Name"
         value={customerName}
         onChangeText={setCustomerName}
+        autoCapitalize="words"
+        returnKeyType="next"
       />
 
       <TextInput
@@ -152,6 +205,8 @@ export default function Index() {
         placeholder="Destination"
         value={destination}
         onChangeText={setDestination}
+        autoCapitalize="words"
+        returnKeyType="next"
       />
 
       <TextInput
@@ -159,6 +214,8 @@ export default function Index() {
         placeholder="Truck Plate Number"
         value={truckPlate}
         onChangeText={setTruckPlate}
+        autoCapitalize="characters"
+        returnKeyType="next"
       />
 
       <TextInput
@@ -166,6 +223,8 @@ export default function Index() {
         placeholder="Driver Name"
         value={driverName}
         onChangeText={setDriverName}
+        autoCapitalize="words"
+        returnKeyType="next"
       />
 
       <TextInput
@@ -173,6 +232,8 @@ export default function Index() {
         placeholder="Delivery Date (YYYY-MM-DD)"
         value={deliveryDate}
         onChangeText={setDeliveryDate}
+        keyboardType="numbers-and-punctuation"
+        returnKeyType="done"
       />
 
       <Text style={styles.label}>Delivery Status</Text>
@@ -219,9 +280,37 @@ export default function Index() {
         </Pressable>
       )}
 
-      <Text style={styles.heading}>Delivery Records</Text>
+      <View style={styles.listHeading}>
+        <Text style={styles.heading}>Delivery Records</Text>
+        <Pressable
+          style={styles.refreshButton}
+          onPress={() => void loadDeliveries()}
+          disabled={loadingDeliveries}
+        >
+          <Text style={styles.refreshText}>
+            {loadingDeliveries ? "Loading..." : "Refresh"}
+          </Text>
+        </Pressable>
+      </View>
 
-      {deliveries.length === 0 ? (
+      {loadingDeliveries && deliveries.length === 0 && !loadError && (
+        <ActivityIndicator style={styles.loadingIndicator} color="#2457a7" />
+      )}
+
+      {loadError && (
+        <View style={styles.errorCard}>
+          <Text style={styles.errorText}>{loadError}</Text>
+          <Pressable
+            style={styles.retryButton}
+            onPress={() => void loadDeliveries()}
+            disabled={loadingDeliveries}
+          >
+            <Text style={styles.buttonText}>Retry</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {!loadingDeliveries && !loadError && deliveries.length === 0 ? (
         <Text style={styles.emptyText}>No delivery records found.</Text>
       ) : (
         deliveries.map((item) => (
@@ -241,6 +330,7 @@ export default function Index() {
               <Pressable
                 style={styles.editButton}
                 onPress={() => handleEdit(item)}
+                disabled={loading || deletingId !== null}
               >
                 <Text style={styles.buttonText}>Edit</Text>
               </Pressable>
@@ -248,8 +338,11 @@ export default function Index() {
               <Pressable
                 style={styles.deleteButton}
                 onPress={() => handleDelete(item.id)}
+                disabled={deletingId !== null}
               >
-                <Text style={styles.buttonText}>Delete</Text>
+                <Text style={styles.buttonText}>
+                  {deletingId === item.id ? "Deleting..." : "Delete"}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -262,8 +355,11 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
     backgroundColor: "#f5f5f5",
+  },
+  content: {
+    padding: 20,
+    paddingBottom: 36,
   },
   title: {
     fontSize: 23,
@@ -274,6 +370,13 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 19,
     fontWeight: "bold",
+    marginTop: 15,
+    marginBottom: 12,
+  },
+  listHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginTop: 15,
     marginBottom: 12,
   },
@@ -331,6 +434,32 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#666",
     marginVertical: 15,
+  },
+  loadingIndicator: {
+    marginVertical: 18,
+  },
+  refreshButton: {
+    padding: 8,
+  },
+  refreshText: {
+    color: "#2457a7",
+    fontWeight: "600",
+  },
+  errorCard: {
+    padding: 14,
+    marginBottom: 12,
+    borderRadius: 8,
+    backgroundColor: "#ffebee",
+    gap: 10,
+  },
+  errorText: {
+    color: "#b71c1c",
+  },
+  retryButton: {
+    backgroundColor: "#2457a7",
+    padding: 10,
+    borderRadius: 5,
+    alignItems: "center",
   },
   deliveryCard: {
     backgroundColor: "white",

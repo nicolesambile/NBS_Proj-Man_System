@@ -23,6 +23,19 @@ In the output, you'll find options to open the app in a
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
+## Delivery API
+
+The delivery screen uses the PHP API contract in `services/api.ts`. Configure the reachable API URL before starting the app:
+
+1. Copy `.env.example` to `.env`.
+2. Set `EXPO_PUBLIC_API_URL` to your API URL. On a physical phone, use the computer's LAN IP address; `localhost` refers to the phone itself.
+3. Keep `EXPO_PUBLIC_ALLOW_INSECURE_HTTP=true` only for local Android development against an HTTP server. Use HTTPS for iOS and production, then remove this setting.
+4. Restart Expo after changing `.env`. For a generated Android app, run `npx expo prebuild --platform android` and rebuild to apply the development HTTP setting.
+
+The API must return JSON using `{ "success": true, "data": ... }`. A list response must provide an array in `data`; create, update, and delete requests must accept JSON bodies using `POST`, `PUT`, and `DELETE`.
+
+Browser-based Expo Web also requires CORS. The PHP API allows the common local Expo origins; if you use a different host or port, add the exact app origin to `$defaultAllowedOrigins` in the API file or set `TRUCK_API_ALLOWED_ORIGINS` in Apache.
+
 You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
 ## Get a fresh project

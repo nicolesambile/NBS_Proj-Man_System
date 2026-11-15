@@ -26,6 +26,7 @@
     },
     "plugins": [
       "expo-router",
+      "./plugins/withDevelopmentHttp",
       [
         "expo-splash-screen",
         {
@@ -33,7 +34,9 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
